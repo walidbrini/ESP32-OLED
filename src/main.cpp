@@ -14,8 +14,10 @@
 #include "freertos/queue.h"
 
 
+#define UART2_TX_PIN 27
+#define UART2_RX_PIN 26
 
-# define DHTPIN 22
+# define DHTPIN 15
 # define DHTTYPE DHT22
 # define TAILLE_MAX  20
 # define DEMO_DURATION 3000
@@ -32,8 +34,6 @@ SemaphoreHandle_t s1 = NULL;
 SemaphoreHandle_t s2 = NULL; 
 SemaphoreHandle_t mutex = NULL ; 
 
-
-
 // Initialize the OLED display using Arduino Wire:
 SSD1306Wire display(0x3c, 5, 4);   // ADDRESS, SDA, SCL  -  SDA and SCL usually populate automatically based on your board's pins_arduino.h e.g. https://github.com/esp8266/Arduino/blob/master/variants/nodemcu/pins_arduino.h
 
@@ -43,8 +43,8 @@ int demoMode = 0;
 int counter = 1;
 int table_pointer = 0 ; 
 
-
-float temp,humidite,taux_co2 ; 
+float temp,humidite ; 
+u_int16_t taux_co2 ; 
 
 void drawFontFaceDemo() {
   // Font Demo1
@@ -108,7 +108,6 @@ void update_screen() {
 
   display.display();
 }
-
 
 void vProducteurTemperature(void *pvParameters)
 {
@@ -195,11 +194,11 @@ void vConsomateur(void *pvParameters)
       xSemaphoreGive(s1); 
       if (current_mesure.type_capteur == 'H') {
         humidite = current_mesure.mesure ; 
-        printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
+        //printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
       }
       else if (current_mesure.type_capteur == 'T'){
         temp = current_mesure.mesure ;
-        printf("Le consomateur a consomé %f de type temp \n ",temp);
+        //printf("Le consomateur a consomé %f de type temp \n ",temp);
 
       }
       else if (current_mesure.type_capteur == 'C'){
@@ -213,6 +212,31 @@ void vConsomateur(void *pvParameters)
   vTaskDelete(NULL); 
 }
 
+void vProducteurCo2(void * pvParameters){
+    const char *pcTaskName = "ProducteurCo2";
+    int valueToSend;
+    BaseType_t status;
+    UBaseType_t uxPriority;
+    
+    // Convert pvParameters to int
+    valueToSend = (int)pvParameters;
+    
+    uxPriority = uxTaskPriorityGet(NULL);
+    TickType_t xLastWakeTime;
+    xLastWakeTime = xTaskGetTickCount();
+
+    for (;;) {
+        if (Serial2.available() >= 0) {
+            u_int16_t receivedData;  // Temporary variable to hold received data
+            Serial2.readBytes((char*)&receivedData, sizeof(receivedData));  // Read bytes into temporary variable
+            taux_co2 = receivedData;  // Assign received data to taux_co2
+            Serial.print("Received Co2: ");
+            Serial.println(taux_co2);
+        }
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
+    }
+}
+
 
 Demo demos[] = {drawCounter};
 int demoLength = (sizeof(demos) / sizeof(Demo));
@@ -223,6 +247,7 @@ void setup() {
   Serial.println();
   Serial.println();
 
+  Serial2.begin(9600, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
 
   // Initialising the UI will init the display too.
   display.init();
@@ -230,7 +255,6 @@ void setup() {
   display.setFont(ArialMT_Plain_10);
 
   // Init the Temp Sensor 
-
   dht.begin();  // Iniialize sensor
   //delay(2000); // to get accurate values
 
@@ -238,13 +262,16 @@ void setup() {
   s2 = xSemaphoreCreateCounting( TAILLE_MAX, 0 );
   mutex = xSemaphoreCreateMutex(); 
   // Create Tasks 
-  xTaskCreatePinnedToCore( vProducteurTemperature, "Producteur", 10000, NULL, 1, NULL , 0 ); 
-  xTaskCreatePinnedToCore( vProducteurHumidite, "Producteur", 10000, NULL, 1, NULL , 0 );  
-  xTaskCreatePinnedToCore( vConsomateur, "Consomatuer", 10000, NULL, 1 ,NULL ,  0 );
+  xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
+  xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );  
+  xTaskCreatePinnedToCore( vProducteurCo2, "ProducteurCo2", 10000, NULL, 1, NULL , 0 );  
 
+  xTaskCreatePinnedToCore( vConsomateur, "Consomatuer", 10000, NULL, 1 ,NULL ,  0 );
+    
 }
 
 void loop() {
 
-}
 
+
+}
