@@ -13,9 +13,9 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
-
 #define UART2_TX_PIN 27
 #define UART2_RX_PIN 26
+#define INTERRUPT_PIN 22  // Define the button pin
 
 # define DHTPIN 15
 # define DHTTYPE DHT22
@@ -33,18 +33,20 @@ mesure_t tab_mesure[TAILLE_MAX] ;
 SemaphoreHandle_t s1 = NULL; 
 SemaphoreHandle_t s2 = NULL; 
 SemaphoreHandle_t mutex = NULL ; 
+SemaphoreHandle_t xBinarySemaphore = NULL;
 
 // Initialize the OLED display using Arduino Wire:
 SSD1306Wire display(0x3c, 5, 4);   // ADDRESS, SDA, SCL  -  SDA and SCL usually populate automatically based on your board's pins_arduino.h e.g. https://github.com/esp8266/Arduino/blob/master/variants/nodemcu/pins_arduino.h
 
-typedef void (*Demo)(void);
+typedef void (*Screen)(void);
 
 int demoMode = 0;
 int counter = 1;
 int table_pointer = 0 ; 
-
+int x = 0 ; 
 float temp,humidite ; 
 u_int16_t taux_co2 ; 
+bool interruptOccurred = false;  // Global flag to indicate an interrupt occurred
 
 void drawFontFaceDemo() {
   // Font Demo1
@@ -75,13 +77,24 @@ void drawTextAlignmentDemo() {
   display.drawString(128, 33, "Right aligned (128,33)");
 }
 
-void drawCounter() {
+void draw_waiting() {
+  display.clear(); 
   // Text alignment demo
-  display.setFont(ArialMT_Plain_16);
+  display.setFont(ArialMT_Plain_10);
   // The coordinates define the center of the text
   display.setTextAlignment(TEXT_ALIGN_CENTER);
-  display.drawString(64, 22, "Win el rechta ? ");
+  display.drawString(64, 22, "Waiting for Person");
   display.display();
+}
+
+void drawProgressBarDemo() {
+  int progress = (counter / 5) % 100;
+  // draw the progress bar
+  display.drawProgressBar(0, 32, 120, 10, progress);
+
+  // draw the percentage as String
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(64, 15, String(progress) + "%");
 }
 
 void update_screen() {
@@ -92,7 +105,10 @@ void update_screen() {
   // Convert temperature and humidity to strings
   char tempStr[8]; // Buffer to hold temperature string
   char humidityStr[8]; // Buffer to hold humidity string
-  char co2Str[8] = "1500";
+  char co2Str[8] ;
+
+  sprintf(co2Str, "%d", taux_co2);
+
   char ppm[4] = "ppm"; 
 
   dtostrf(temp, 4, 1, tempStr); // Convert float to string with 1 decimal place
@@ -193,9 +209,9 @@ void vConsomateur(void *pvParameters)
   mesure_t current_mesure ;
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
-
   for (;;)
-  {
+  {   
+      
       xSemaphoreTake(s2, portMAX_DELAY); 
       // Consume value
       current_mesure = tab_mesure[i] ; 
@@ -214,8 +230,11 @@ void vConsomateur(void *pvParameters)
         taux_co2 = current_mesure.mesure ; 
         printf("Le consomateur a consomé %d de type C02 \n ",taux_co2);
       }
+      if (interruptOccurred){
       display.clear();
       update_screen();
+      }
+      
       vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
   
   }
@@ -242,8 +261,8 @@ void vProducteurCo2(void * pvParameters){
             u_int16_t receivedData;  // Temporary variable to hold received data
             Serial2.readBytes((char*)&receivedData, sizeof(receivedData));  // Read bytes into temporary variable
             taux_co2 = receivedData;  // Assign received data to taux_co2
-            Serial.print("Received Co2: ");
-            Serial.println(taux_co2);
+            //Serial.print("Received Co2: ");
+            //Serial.println(taux_co2);
             mesure_container_co2.mesure =  float(taux_co2) ;
         }
         // Publish to buffer
@@ -258,8 +277,15 @@ void vProducteurCo2(void * pvParameters){
 }
 
 
-Demo demos[] = {drawCounter};
-int demoLength = (sizeof(demos) / sizeof(Demo));
+
+void IRAM_ATTR interruptPersonne()
+{ 
+  interruptOccurred = true; 
+}
+
+
+Screen screens[] = {draw_waiting, update_screen};
+int number_screens = (sizeof(screens) / sizeof(Screen));
 long timeSinceLastModeSwitch = 0;
 
 void setup() {
@@ -280,8 +306,15 @@ void setup() {
 
   s1 = xSemaphoreCreateCounting( TAILLE_MAX, TAILLE_MAX );
   s2 = xSemaphoreCreateCounting( TAILLE_MAX, 0 );
+  xBinarySemaphore = xSemaphoreCreateBinary();
   mutex = xSemaphoreCreateMutex(); 
+  
   // Create Tasks 
+  draw_waiting(); 
+
+  pinMode(INTERRUPT_PIN, INPUT_PULLDOWN);  // Set button pin as input with pull-up resistor
+  attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), interruptPersonne, RISING); // Attach interrupt to button pin, trigger on falling edge
+
   xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );  
   xTaskCreatePinnedToCore( vProducteurCo2, "ProducteurCo2", 10000, NULL, 1, NULL , 0 );  
@@ -290,5 +323,4 @@ void setup() {
 }
 
 void loop() {
-
 }
