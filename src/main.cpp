@@ -12,6 +12,10 @@
 #include "driver/gpio.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
 
 #define UART2_TX_PIN 27
 #define UART2_RX_PIN 26
@@ -22,7 +26,20 @@
 # define TAILLE_MAX  20
 # define DEMO_DURATION 3000
 
+// Set your Static IP address
+IPAddress local_IP(192, 168, 137, 100);
+// Set your Gateway IP address
+IPAddress gateway(192, 168, 137, 1);
+IPAddress subnet(255, 255, 0, 0);
+
 DHT dht(DHTPIN,DHTTYPE); // Object declaraion
+
+const char *ssid = "Walid";
+const char *password = "12345678";
+
+WebServer server(80);
+
+
 
 typedef struct {
   float mesure;
@@ -278,22 +295,72 @@ void vProducteurCo2(void * pvParameters){
     }
 }
 
-
-
 void IRAM_ATTR interruptPersonne()
 { 
   interruptOccurred = true; 
 }
 
+void handleRoot() {
+  char msg[1500];
 
-Screen screens[] = {draw_waiting, update_screen};
-int number_screens = (sizeof(screens) / sizeof(Screen));
-long timeSinceLastModeSwitch = 0;
+  snprintf(msg, 1500,
+           "<html>\
+  <head>\
+    <meta http-equiv='refresh' content='4'/>\
+    <meta name='viewport' content='width=device-width, initial-scale=1'>\
+    <link rel='stylesheet' href='https://use.fontawesome.com/releases/v5.7.2/css/all.css' integrity='sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr' crossorigin='anonymous'>\
+    <title>RTOS Project Server</title>\
+    <style>\
+    html { font-family: Arial; display: inline-block; margin: 0px auto; text-align: center;}\
+    h2 { font-size: 3.0rem; }\
+    p { font-size: 3.0rem; }\
+    .units { font-size: 1.2rem; }\
+    .dht-labels{ font-size: 1.5rem; vertical-align:middle; padding-bottom: 15px;}\
+    </style>\
+  </head>\
+  <body>\
+      <h2>ESP32 DHT Server!</h2>\
+      <p>\
+        <i class='fas fa-thermometer-half' style='color:#ca3517;'></i>\
+        <span class='dht-labels'>Temperature</span>\
+        <span>%.2f</span>\
+        <sup class='units'>&deg;C</sup>\
+      </p>\
+      <p>\
+        <i class='fas fa-tint' style='color:#00add6;'></i>\
+        <span class='dht-labels'>Humidity</span>\
+        <span>%.2f</span>\
+        <sup class='units'>&percnt;</sup>\
+      </p>\
+  </body>\
+</html>",
+           temp, humidite
+          );
+  server.send(200, "text/html", msg);
+}
+
+void connect2Wifi(){
+
+  if (!WiFi.config(local_IP, gateway, subnet)) {
+    Serial.println("STA Failed to configure");
+  }
+  // Connect to Wi-Fi network with SSID and password
+  Serial.print("Connecting to ");
+  Serial.print(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("Connected to WiFi");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
 
 void setup() {
   Serial.begin(115200);
-  Serial.println();
-  Serial.println();
 
   Serial2.begin(9600, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
 
@@ -321,8 +388,20 @@ void setup() {
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );  
   xTaskCreatePinnedToCore( vProducteurCo2, "ProducteurCo2", 10000, NULL, 1, NULL , 0 );  
   xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
-    
+
+  
+  connect2Wifi();
+  if (MDNS.begin("esp32")) {
+    Serial.println("MDNS responder started");
+  }
+  server.on("/", handleRoot);
+
+  server.begin();
+  Serial.println("HTTP server started");
+
 }
 
 void loop() {
+  server.handleClient();
+  delay(2);
 }
