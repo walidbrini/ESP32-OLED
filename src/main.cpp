@@ -87,11 +87,14 @@ void drawCounter() {
 void update_screen() {
   // See http://blog.squix.org/2015/05/esp8266-nodemcu-how-to-create-xbm.html
   // on how to create XBM files
-  display.drawXbm(0, 0, temp_Logo_width, temp_Logo_height, temp_Logo_bits);
+  display.drawXbm(0, 0, temp_Logo_width, temp_Logo_height, sensor_screen_bits2);
   
   // Convert temperature and humidity to strings
   char tempStr[8]; // Buffer to hold temperature string
   char humidityStr[8]; // Buffer to hold humidity string
+  char co2Str[8] = "1500";
+  char ppm[4] = "ppm"; 
+
   dtostrf(temp, 4, 1, tempStr); // Convert float to string with 1 decimal place
   dtostrf(humidite, 4, 1, humidityStr); // Convert float to string with 1 decimal place
   strcat(tempStr, "°C");
@@ -100,11 +103,17 @@ void update_screen() {
 
   // Display temperature
   display.setTextAlignment(TEXT_ALIGN_CENTER);
-  display.drawString(30, 45, tempStr);
+  display.drawString(42, 8, tempStr);
 
   // Display humidity
   display.setTextAlignment(TEXT_ALIGN_CENTER);
-  display.drawString(100, 45, humidityStr);
+  display.drawString(42, 40, humidityStr);
+
+  // Display Co2
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(100, 30, co2Str);
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(100, 44, ppm);
 
   display.display();
 }
@@ -194,15 +203,16 @@ void vConsomateur(void *pvParameters)
       xSemaphoreGive(s1); 
       if (current_mesure.type_capteur == 'H') {
         humidite = current_mesure.mesure ; 
-        //printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
+        printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
       }
       else if (current_mesure.type_capteur == 'T'){
         temp = current_mesure.mesure ;
-        //printf("Le consomateur a consomé %f de type temp \n ",temp);
+        printf("Le consomateur a consomé %f de type temp \n ",temp);
 
       }
       else if (current_mesure.type_capteur == 'C'){
         taux_co2 = current_mesure.mesure ; 
+        printf("Le consomateur a consomé %d de type C02 \n ",taux_co2);
       }
       display.clear();
       update_screen();
@@ -224,6 +234,8 @@ void vProducteurCo2(void * pvParameters){
     uxPriority = uxTaskPriorityGet(NULL);
     TickType_t xLastWakeTime;
     xLastWakeTime = xTaskGetTickCount();
+    mesure_t mesure_container_co2 ;
+    mesure_container_co2.type_capteur = 'C';
 
     for (;;) {
         if (Serial2.available() >= 0) {
@@ -232,7 +244,15 @@ void vProducteurCo2(void * pvParameters){
             taux_co2 = receivedData;  // Assign received data to taux_co2
             Serial.print("Received Co2: ");
             Serial.println(taux_co2);
+            mesure_container_co2.mesure =  float(taux_co2) ;
         }
+        // Publish to buffer
+        xSemaphoreTake(s1, portMAX_DELAY);
+        xSemaphoreTake(mutex, portMAX_DELAY);
+        tab_mesure[table_pointer] = mesure_container_co2;
+        table_pointer = (table_pointer + 1) % TAILLE_MAX;
+        xSemaphoreGive(mutex);
+        xSemaphoreGive(s2);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
@@ -265,13 +285,10 @@ void setup() {
   xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );  
   xTaskCreatePinnedToCore( vProducteurCo2, "ProducteurCo2", 10000, NULL, 1, NULL , 0 );  
-
-  xTaskCreatePinnedToCore( vConsomateur, "Consomatuer", 10000, NULL, 1 ,NULL ,  0 );
+  xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
     
 }
 
 void loop() {
-
-
 
 }
