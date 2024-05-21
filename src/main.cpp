@@ -88,8 +88,6 @@ void drawTextAlignmentDemo() {
   // Text alignment demo
   display.setFont(ArialMT_Plain_10);
 
-
-
   // The coordinates define the left starting point of the text
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(0, 10, "Left aligned (0,10)");
