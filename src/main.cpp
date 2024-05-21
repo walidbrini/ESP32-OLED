@@ -37,6 +37,8 @@ DHT dht(DHTPIN,DHTTYPE); // Object declaraion
 const char *ssid = "Walid";
 const char *password = "12345678";
 
+bool buttonState = false; // Initially button state is false
+
 WebServer server(80);
 
 
@@ -57,6 +59,10 @@ SSD1306Wire display(0x3c, 5, 4);   // ADDRESS, SDA, SCL  -  SDA and SCL usually 
 
 typedef void (*Screen)(void);
 
+unsigned long previousMillis = 0; // Variable to store the previous time when the screen was updated
+const unsigned long displayDuration = 5000; // Duration for displaying the screen (5 seconds)
+unsigned long current_time  ;
+unsigned long start_time ; 
 int demoMode = 0;
 int counter = 1;
 int table_pointer = 0 ; 
@@ -64,6 +70,7 @@ int x = 0 ;
 float temp,humidite ; 
 u_int16_t taux_co2 ; 
 bool interruptOccurred = false;  // Global flag to indicate an interrupt occurred
+bool flag = true ; 
 
 void drawFontFaceDemo() {
   // Font Demo1
@@ -118,7 +125,6 @@ void update_screen() {
   // See http://blog.squix.org/2015/05/esp8266-nodemcu-how-to-create-xbm.html
   // on how to create XBM files
   display.drawXbm(0, 0, temp_Logo_width, temp_Logo_height, sensor_screen_bits2);
-  
   // Convert temperature and humidity to strings
   char tempStr[8]; // Buffer to hold temperature string
   char humidityStr[8]; // Buffer to hold humidity string
@@ -247,17 +253,36 @@ void vConsomateur(void *pvParameters)
         taux_co2 = current_mesure.mesure ; 
         printf("Le consomateur a consomé %d de type C02 \n ",taux_co2);
       }
+
       if (interruptOccurred){
       display.clear();
       update_screen();
       }
-      
+
+      current_time = millis() ; 
+
+      if ( current_time - start_time> displayDuration){
+        buttonState = true;  
+      }
+
+      if (buttonState){
+        buttonState = false ; 
+        interruptOccurred  = false ; 
+        display.clear();
+        draw_waiting();
+        printf("Yes buttonn \n"); 
+      }
+
+
       vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
   
   }
   vTaskDelete(NULL); 
 }
 
+/*
+  La periode de C02  
+  taux de co2 periode plus grande */
 void vProducteurCo2(void * pvParameters){
     const char *pcTaskName = "ProducteurCo2";
     int valueToSend;
@@ -289,52 +314,72 @@ void vProducteurCo2(void * pvParameters){
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
     }
 }
 
 void IRAM_ATTR interruptPersonne()
 { 
   interruptOccurred = true; 
+  start_time = millis(); 
 }
 
-void handleRoot() {
-  char msg[1500];
 
-  snprintf(msg, 1500,
-           "<html>\
-  <head>\
-    <meta http-equiv='refresh' content='4'/>\
-    <meta name='viewport' content='width=device-width, initial-scale=1'>\
-    <link rel='stylesheet' href='https://use.fontawesome.com/releases/v5.7.2/css/all.css' integrity='sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr' crossorigin='anonymous'>\
-    <title>RTOS Project Server</title>\
-    <style>\
-    html { font-family: Arial; display: inline-block; margin: 0px auto; text-align: center;}\
-    h2 { font-size: 3.0rem; }\
-    p { font-size: 3.0rem; }\
-    .units { font-size: 1.2rem; }\
-    .dht-labels{ font-size: 1.5rem; vertical-align:middle; padding-bottom: 15px;}\
-    </style>\
-  </head>\
-  <body>\
-      <h2>ESP32 DHT Server!</h2>\
-      <p>\
-        <i class='fas fa-thermometer-half' style='color:#ca3517;'></i>\
-        <span class='dht-labels'>Temperature</span>\
-        <span>%.2f</span>\
-        <sup class='units'>&deg;C</sup>\
-      </p>\
-      <p>\
-        <i class='fas fa-tint' style='color:#00add6;'></i>\
-        <span class='dht-labels'>Humidity</span>\
-        <span>%.2f</span>\
-        <sup class='units'>&percnt;</sup>\
-      </p>\
-  </body>\
+void handleRoot() {
+  char msg[2500]; // Increased buffer size to accommodate additional data
+
+  snprintf(msg, 2500,
+           "<!DOCTYPE html>\
+<html>\
+<head>\
+<meta http-equiv='refresh' content='4'/>\
+<meta name='viewport' content='width=device-width, initial-scale=1'>\
+<link rel='stylesheet' href='https://use.fontawesome.com/releases/v5.7.2/css/all.css' integrity='sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr' crossorigin='anonymous'>\
+<title>RTOS Project Server</title>\
+<style>\
+html { font-family: Arial; display: inline-block; margin: 0px auto; text-align: center;}\
+h2 { font-size: 3.0rem; }\
+p { font-size: 3.0rem; }\
+.units { font-size: 1.2rem; }\
+.dht-labels{ font-size: 1.5rem; vertical-align:middle; padding-bottom: 15px;}\
+.button { background-color: #4CAF50; border: none; color: white; padding: 20px 40px; text-align: center; text-decoration: none; font-size: 30px; margin: 4px 2px; cursor: pointer; border-radius: 12px; }\
+.button:hover { background-color: #45a049; }\
+</style>\
+</head>\
+<body>\
+<h2>Projet FreeRTOS ESP32 Data Monitoring</h2>\
+<p>\
+<i class='fas fa-thermometer-half' style='color:#ca3517;'></i>\
+<span class='dht-labels'>Temperature</span>\
+<span>%.2f</span>\
+<sup class='units'>&deg;C</sup>\
+</p>\
+<p>\
+<i class='fas fa-tint' style='color:#00add6;'></i>\
+<span class='dht-labels'>Humidity</span>\
+<span>%.2f</span>\
+<sup class='units'>&percnt;</sup>\
+</p>\
+<p>\
+<span class='dht-labels'>CO2</span>\
+<span>%u</span>\
+<sup class='units'>ppm</sup>\
+</p>\
+<form action='/toggleButton'>\
+  <button class='button' type='submit'>Toggle Button</button>\
+</form>\
+</body>\
 </html>",
-           temp, humidite
+           temp, humidite, taux_co2, buttonState ? "ON" : "OFF"
           );
   server.send(200, "text/html", msg);
+}
+
+
+void handleToggleButton() {
+  buttonState = !buttonState; // Toggle button state
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void connect2Wifi(){
@@ -356,7 +401,6 @@ void connect2Wifi(){
   Serial.println(WiFi.localIP());
 }
 
-
 void setup() {
   Serial.begin(115200);
 
@@ -373,9 +417,10 @@ void setup() {
 
   s1 = xSemaphoreCreateCounting( TAILLE_MAX, TAILLE_MAX );
   s2 = xSemaphoreCreateCounting( TAILLE_MAX, 0 );
-  xBinarySemaphore = xSemaphoreCreateBinary();
   mutex = xSemaphoreCreateMutex(); 
   
+  xBinarySemaphore = xSemaphoreCreateBinary();
+
   // Create Tasks 
   draw_waiting(); 
 
@@ -392,8 +437,8 @@ void setup() {
   if (MDNS.begin("esp32")) {
     Serial.println("MDNS responder started");
   }
-  server.on("/", handleRoot);
-
+  server.on("/", handleRoot); // Set up the root page handler
+  server.on("/toggleButton", handleToggleButton); // Set up the toggle button handler
   server.begin();
   Serial.println("HTTP server started");
 
