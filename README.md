@@ -82,3 +82,7 @@ A server was used to monitor the various data with a refreshing rate of 1 second
 ## Conclusion
 
 This project demonstrates the implementation of a real-time embedded system using FreeRTOS on ESP32 boards. By utilizing various communication protocols and task scheduling techniques, the system efficiently reads and displays sensor data based on the presence of a person. This setup can be extended to other applications requiring real-time data processing and display.
+
+## Note
+
+Documentation in French is also available. Please refer to the [PDF](docs/CR_FreeRtos_BRINI_Walid_DEROUICH_Othmene.pdf) inside the `docs` folder.
