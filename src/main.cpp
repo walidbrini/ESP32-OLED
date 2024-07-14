@@ -303,8 +303,8 @@ void vProducteurCo2(void * pvParameters){
             u_int16_t receivedData;  // Temporary variable to hold received data
             Serial2.readBytes((char*)&receivedData, sizeof(receivedData));  // Read bytes into temporary variable
             taux_co2 = receivedData;  // Assign received data to taux_co2
-            //Serial.print("Received Co2: ");
-            //Serial.println(taux_co2);
+            Serial.print("Received Co2: ");
+            Serial.println(taux_co2);
             mesure_container_co2.mesure =  float(taux_co2) ;
         }
         // Publish to buffer
@@ -375,6 +375,22 @@ p { font-size: 3.0rem; }\
   server.send(200, "text/html", msg);
 }
 
+void vServeur(void * pvParameters){
+  
+   const char *pcTaskName = "Serveur";
+  UBaseType_t uxPriority;
+  uxPriority = uxTaskPriorityGet(NULL);
+  TickType_t xLastWakeTime;
+  xLastWakeTime = xTaskGetTickCount();
+  for (;;)
+  {   
+      server.handleClient();
+      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
+  }
+  vTaskDelete(NULL); 
+  
+
+}
 
 void handleToggleButton() {
   buttonState = !buttonState; // Toggle button state
@@ -431,8 +447,8 @@ void setup() {
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );  
   xTaskCreatePinnedToCore( vProducteurCo2, "ProducteurCo2", 10000, NULL, 1, NULL , 0 );  
   xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
+  xTaskCreatePinnedToCore( vServeur, "Serveur", 10000, NULL, 1, NULL , 0 ); 
 
-  
   connect2Wifi();
   if (MDNS.begin("esp32")) {
     Serial.println("MDNS responder started");
@@ -444,7 +460,9 @@ void setup() {
 
 }
 
+
+
+
 void loop() {
-  server.handleClient();
-  delay(2);
+
 }
